@@ -124,15 +124,85 @@ const getAllProperties = function (options, limit = 10) {
   // }
   // return Promise.resolve(limitedProperties);
 
-  return client
-    .query(`SELECT * FROM properties LIMIT $1`, [limit])
-    .then((result) => {
-      console.log(result.rows);
-      return result.rows;
-    })
-    .catch((err) => {
-      console.log(err.message);
-    });
+  // return client
+  //   .query(`
+  //   SELECT properties.*, avg(property_reviews.rating) as average_rating
+  //   FROM properties
+  //   LEFT JOIN property_reviews ON properties.id = property_id
+  //   WHERE city LIKE '%ancouv%'
+  //   GROUP BY properties.id
+  //   HAVING avg(property_reviews.rating) >= 4
+  //   ORDER BY cost_per_night
+  //   LIMIT 10;
+  //   `, [limit])
+  //   .then((result) => {
+  //     console.log(result.rows);
+  //     return result.rows;
+  //   })
+  //   .catch((err) => {
+  //     console.log(err.message);
+  //   });
+
+  // 1
+  const queryParams = [];
+
+  // 2
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  // 3
+  let where = false;
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    queryString += `WHERE city LIKE $${queryParams.length} `;
+    where = true;
+  } 
+
+  if (options.owner_id && !where) {
+    queryParams.push(`%${options.owner_id}%`);
+    queryString += `WHERE properties.owner_id = $${queryParams.length} `;
+    where = true;
+  } else {
+    queryParams.push(`%${options.owner_id}%`);
+    queryString += `AND properties.owner_id = $${queryParams.length} `;
+  }
+
+  if (options.minimum_price_per_night && options.maximum_price_per_night && !where) {
+    queryParams.push(`%${options.minimum_price_per_night}%`);
+    queryParams.push(`%${options.maximum_price_per_night}%`);
+    queryString += `WHERE properties.cost_per_night * 100 > $${queryParams.length - 1} AND properties.cost_per_night * 100 < $${queryParams.length} `;
+    where = true;
+  } else {
+    queryParams.push(`%${options.minimum_price_per_night}%`);
+    queryParams.push(`%${options.maximum_price_per_night}%`);
+    queryString += `AND properties.cost_per_night * 100 > $${queryParams.length - 1} AND properties.cost_per_night * 100 < $${queryParams.length} `;
+  }
+
+  if (options.minimum_rating && !where) {
+    queryParams.push(`%${options.minimum_rating}%`);
+    queryString += `WHERE average_rating >= $${queryParams.length}`;
+    where = true;
+  } else {
+    queryParams.push(`%${options.minimum_rating}%`);
+    queryString += `AND average_rating >= $${queryParams.length}`;
+  }
+
+  // 4
+  queryParams.push(limit);
+  queryString += `
+  GROUP BY properties.id
+  ORDER BY cost_per_night
+  LIMIT $${queryParams.length};
+  `;
+
+  // 5
+  console.log(queryString, queryParams);
+
+  // 6
+  return client.query(queryString, queryParams).then((result) => result.rows);
 };
 
 /**
